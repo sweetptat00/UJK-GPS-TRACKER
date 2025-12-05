@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Tracking BBPVP BEKASI KEMNAKER RI</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        #map { height: 500px; }
+        .table-container { max-height: 300px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <!-- NAVBAR -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">GPS TRACKING BBPVP BEKASI KEMNAKER RI</a>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <!-- MAP -->
+            <div class="col-lg-8">
+                <div id="map"></div>
+            </div>
+
+            <!-- INFO PANEL -->
+            <div class="col-lg-4">
+                <div class="card mb-3">
+                    <div class="card-header"><h5>Last Data Received</h5></div>
+                    <div class="card-body">
+                        <table class="table table-borderless">
+                            <tbody>
+                                <tr><td>Date</td><td>: <span id="time_date"></span></td></tr>
+                                <tr><td>Time</td><td>: <span id="time_time"></span></td></tr>
+                                <tr><td>Latitude</td><td>: <span id="latitude"></span></td></tr>
+                                <tr><td>Longitude</td><td>: <span id="longitude"></span></td></tr>
+                                <tr><td>Distance (km)</td><td>: <span id="distance">0.000</span></td></tr>
+                            </tbody>
+                        </table>
+
+                        <div class="row">
+                            <div class="col-md-5">
+                                <button id="startPolylineButton" class="btn btn-success w-100">Start Tracking</button>
+                            </div>
+                            <div class="col-md-4">
+                                <button id="resetButton" class="btn btn-primary w-100" style="display:none;">Reset</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- HISTORY TABLE -->
+                <div class="card">
+                    <div class="card-header"><h6>History (Max 100 Data)</h6></div>
+                    <div class="card-body table-container">
+                        <table class="table table-striped table-sm" id="historyTable">
+                            <thead class="table-dark sticky-top">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Date</th>
+                                    <th>Time</th>
+                                    <th>Lat</th>
+                                    <th>Lng</th>
+                                    <th>Dist (km)</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- JS Libraries -->
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // Inisialisasi Map
+        var map = L.map('map').setView([0, 0], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        // Ikon Marker
+        var redIcon = new L.Icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41], iconAnchor: [12, 41]
+        });
+        var blueIcon = new L.Icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41], iconAnchor: [12, 41]
+        });
+        var greenIcon = new L.Icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41], iconAnchor: [12, 41]
+        });
+
+        // Variabel Global
+        var stat_btn = 0;
+        var polyline = L.polyline([], { color: 'blue' }).addTo(map);
+        var prevLatLng = null;
+        var startLatLng = null;
+        var totalDistance = 0;
+        var historyData = [];
+        var startMarker = null;
+        var updatedMarker = L.marker([0, 0], { icon: blueIcon }).addTo(map);
+
+        // Fungsi Haversine (meter)
+        function haversine(lat1, lon1, lat2, lon2) {
+            const R = 6371000;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat / 2) ** 2 +
+                      Math.cos(lat1 * Math.PI / 180) *
+                      Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon / 2) ** 2;
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+
+        // Fungsi update map dan tabel
+        function updateMap(data) {
+            var latitude = parseFloat(data.field1);
+            var longitude = parseFloat(data.field2);
+            var timestamp = data.created_at.split('T');
+            var date_now = timestamp[0];
+            var time_now = timestamp[1].split('+')[0];
+
+            document.getElementById('latitude').textContent = latitude.toFixed(6);
+            document.getElementById('longitude').textContent = longitude.toFixed(6);
+            document.getElementById('time_date').textContent = date_now;
+            document.getElementById('time_time').textContent = time_now;
+
+            if (stat_btn == 1) {
+                // Titik awal
+                if (!startLatLng) {
+                    startLatLng = { lat: latitude, lng: longitude };
+                    startMarker = L.marker([latitude, longitude], { icon: redIcon })
+                        .addTo(map)
+                        .bindPopup(`<b>Start Point</b><br>Lat: ${latitude.toFixed(6)}<br>Lng: ${longitude.toFixed(6)}`);
+                    polyline.setLatLngs([[latitude, longitude]]);
+                    prevLatLng = startLatLng;
+                    totalDistance = 0;
+                    document.getElementById('distance').textContent = totalDistance.toFixed(3);
+                    return;
+                }
+
+                // Hitung jarak antar titik (km)
+                if (prevLatLng) {
+                    var d = haversine(prevLatLng.lat, prevLatLng.lng, latitude, longitude);
+                    if (d < 100) totalDistance += d / 1000;
+                }
+
+                prevLatLng = { lat: latitude, lng: longitude };
+                document.getElementById('distance').textContent = totalDistance.toFixed(3);
+                polyline.addLatLng([latitude, longitude]);
+                addHistory(date_now, time_now, latitude, longitude, totalDistance);
+            }
+
+            // Update marker biru (posisi terbaru)
+            updatedMarker.setLatLng([latitude, longitude])
+                .bindPopup(`<b>Update Point</b><br>Lat: ${latitude.toFixed(6)}<br>Lng: ${longitude.toFixed(6)}`);
+            map.panTo([latitude, longitude]);
+        }
+
+        // Tambah ke tabel history
+        function addHistory(date, time, lat, lng, dist) {
+            historyData.push({ date, time, lat, lng, dist });
+            if (historyData.length > 100) historyData.shift();
+
+            var tbody = document.querySelector("#historyTable tbody");
+            tbody.innerHTML = "";
+            historyData.slice().reverse().forEach((item, i) => {
+                var row = `<tr>
+                    <td>${historyData.length - i}</td>
+                    <td>${item.date}</td>
+                    <td>${item.time}</td>
+                    <td>${item.lat.toFixed(6)}</td>
+                    <td>${item.lng.toFixed(6)}</td>
+                    <td>${item.dist.toFixed(3)}</td>
+                </tr>`;
+                tbody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+        // Tombol kontrol
+        document.getElementById('startPolylineButton').addEventListener('click', () => {
+            if (stat_btn == 0) {
+                stat_btn = 1;
+                totalDistance = 0;
+                prevLatLng = null;
+                startLatLng = null;
+                document.getElementById('distance').textContent = "0.000";
+                polyline.setLatLngs([]);
+                document.getElementById('startPolylineButton').textContent = "Stop Tracking";
+                document.getElementById('startPolylineButton').classList.replace('btn-success', 'btn-danger');
+                document.getElementById('resetButton').style.display = 'none';
+            } else {
+                stat_btn = 2;
+                document.getElementById('startPolylineButton').textContent = "Start Tracking";
+                document.getElementById('startPolylineButton').classList.replace('btn-danger', 'btn-success');
+                document.getElementById('resetButton').style.display = 'block';
+            }
+        });
+
+        document.getElementById('resetButton').addEventListener('click', () => {
+            stat_btn = 0;
+            startLatLng = null;
+            prevLatLng = null;
+            totalDistance = 0;
+            historyData = [];
+            document.getElementById('distance').textContent = "0.000";
+            document.querySelector("#historyTable tbody").innerHTML = "";
+            map.eachLayer(layer => {
+                if (layer instanceof L.Marker || layer instanceof L.Polyline) map.removeLayer(layer);
+            });
+            polyline = L.polyline([], { color: 'blue' }).addTo(map);
+            updatedMarker = L.marker([0, 0], { icon: blueIcon }).addTo(map)
+                .bindPopup(`<b>Update Point</b><br>Lat: 0.000000<br>Lng: 0.000000`);
+            document.getElementById('resetButton').style.display = 'none';
+            document.getElementById('startPolylineButton').disabled = false;
+        });
+
+        // Ambil data dari ThingSpeak
+        function fetchData() {
+            fetch('https://api.thingspeak.com/channels/3140732/feeds/last.json?api_key=UWJ5H72LIKYVX5BX&status=true')
+                .then(res => res.json())
+                .then(data => updateMap(data))
+                .catch(err => console.error(err));
+        }
+
+        // Update tiap 15 detik
+        setInterval(fetchData, 15000);
+        fetchData();
+    </script>
+</body>
+</html>
