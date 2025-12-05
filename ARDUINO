@@ -1,0 +1,129 @@
+#include <WiFi.h>
+#include "ThingSpeak.h"
+#include <TinyGPS++.h>
+
+//=== PIN ESP32 ke GPS Module
+#define RX 16
+#define TX 17
+
+// === Konfigurasi WiFi ===
+char ssid[] = "Test";
+char pass[] = "12345678";
+WiFiClient client;
+
+// === Konfigurasi ThingSpeak ===
+unsigned long myChannelNumber = 3138633;
+const char *myWriteAPIKey = "SX4TD1XTN7KX4RLS";
+
+// === GPS ===
+TinyGPSPlus gps;
+#define GPS_BAUDRATE 9600
+
+// === Variabel Data ===
+String lat_data = "";
+String lng_data = "";
+
+// === Interval pengiriman ke ThingSpeak ===
+unsigned long previousMillis = 0;
+const long ts_update_interval = 20000; // 20 detik
+
+void setup() {
+  Serial.begin(115200);
+  Serial2.begin(GPS_BAUDRATE, SERIAL_8N1, RX, TX);
+
+  Serial.println("=== GPS Tracker ===");
+  Serial.println("Connecting to Wifi");
+
+  WiFi.mode(WIFI_STA);
+  connectWiFi();
+  delay(2000);
+
+  ThingSpeak.begin(client);
+
+  Serial.println("Thingspeak initialisation succsessfull!!");
+}
+
+void loop() {
+  // Pastikan WiFi tetap terhubung
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("⚠ Reconnecting to Wifi");
+    connectWiFi();
+    delay(2000);
+  }
+
+  // Baca data GPS
+  while (Serial2.available() > 0) {
+    if (gps.encode(Serial2.read())) {
+
+      if (gps.location.isValid()) {
+        lat_data = String(gps.location.lat(), 8);
+        lng_data = String(gps.location.lng(), 8);
+        
+        Serial.println("==============================");      
+        Serial.print("Latitude: "); Serial.print(lat_data);
+        Serial.print(" | Longitude: "); Serial.println(lng_data);
+      } else {
+        Serial.println("GPS not valid...");
+      }
+    
+    if (gps.satellites.isValid()) {
+    Serial.print("Satelit  : "); Serial.println(gps.satellites.value());
+    }
+    Serial.println("==============================");
+    Serial.println(); // baris kosong
+    }
+  }
+
+  // Kirim data ke ThingSpeak setiap 20 detik
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= ts_update_interval) {
+    previousMillis = currentMillis;
+
+    if (WiFi.status() == WL_CONNECTED && gps.location.isValid()) {
+      client.stop();
+      delay(100);
+
+      ThingSpeak.setField(1, lat_data);
+      ThingSpeak.setField(2, lng_data);
+
+      int x = ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);
+
+      if (x == 200) {
+        Serial.println("Data delivered to Thingspeak");
+      } else {
+        Serial.print("Failed to delivered data. Error code: ");
+        Serial.println(x);
+
+        // Diagnostik error
+        if (x == -210) Serial.println("Unable to open connection to ThingSpeak server (TCP failed)");
+        else if (x == -301) Serial.println("Unable resolve DNS (check the internet connection)");
+        else if (x == 404) Serial.println("Channel not found (Check the channel number)");
+        else if (x == 401) Serial.println("Wrong API Key");
+      }
+      Serial.println("----------------------------------");
+    } else {
+      Serial.println("Waiting for GPS signal....");
+    }
+  }
+}
+
+// === Fungsi koneksi WiFi ===
+void connectWiFi() {
+  WiFi.begin(ssid, pass);
+  int retry = 0;
+  Serial.print("Attempt to connect");
+
+  while (WiFi.status() != WL_CONNECTED && retry < 20) {
+    delay(500);
+    Serial.print(".");
+    retry++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWifi connected!");
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\nFailed to connected to wifi.");
+  }
+}
