@@ -1,0 +1,153 @@
+#include <GeoLinker.h>
+
+HardwareSerial gpsSerial(1);  
+#define GPS_RX 16             
+#define GPS_TX 17             
+
+
+#define GPS_BAUD 9600         
+
+// WiFi Network 
+const char* ssid = "yourSSID";       
+const char* password = "yourPassword";  
+
+// API Authentication
+const char* apiKey = "xxxxxxxxxxxx";    //unique GeoLinker API key
+const char* deviceID = "ESP-32_Tracker"; 
+
+// Data Transmission Settings
+const uint16_t updateInterval = 2;       
+const bool enableOfflineStorage = true; 
+const uint8_t offlineBufferLimit = 20;  
+
+
+
+const bool enableAutoReconnect = true;  
+
+
+const int8_t timeOffsetHours = 5;       
+const int8_t timeOffsetMinutes = 30;    
+
+
+
+GeoLinker geo;
+
+void setup() {
+ 
+  Serial.begin(115200);
+  delay(1000);  
+  
+  Serial.println("Starting GeoLinker GPS Tracker...");
+
+ 
+  gpsSerial.begin(GPS_BAUD, SERIAL_8N1, GPS_RX, GPS_TX);
+  Serial.println("GPS Serial initialized on pins 16(RX) and 17(TX)");
+
+
+  geo.begin(gpsSerial);
+  Serial.println("GeoLinker library initialized");
+  
+ 
+  geo.setApiKey(apiKey);
+  Serial.println("API key configured");
+  
+ 
+  geo.setDeviceID(deviceID);
+  Serial.println("Device ID set");
+  
+  geo.setUpdateInterval_seconds(updateInterval);
+  Serial.print("Update interval set to ");
+  Serial.print(updateInterval);
+  Serial.println(" seconds");
+  
+  geo.setDebugLevel(DEBUG_BASIC);
+  Serial.println("Debug level set to BASIC");
+  
+  geo.enableOfflineStorage(enableOfflineStorage);
+  if(enableOfflineStorage) {
+    Serial.println("Offline storage enabled");
+  }
+  
+  geo.enableAutoReconnect(enableAutoReconnect);
+  if(enableAutoReconnect) {
+    Serial.println("Auto-reconnect enabled");
+  }
+  
+ 
+  geo.setOfflineBufferLimit(offlineBufferLimit);
+  Serial.print("Offline buffer limit set to ");
+  Serial.print(offlineBufferLimit);
+  Serial.println(" records");
+  
+  
+  geo.setTimeOffset(timeOffsetHours, timeOffsetMinutes);
+  Serial.print("Timezone offset set to UTC+");
+  Serial.print(timeOffsetHours);
+  Serial.print(":");
+  Serial.println(timeOffsetMinutes);
+
+  geo.setNetworkMode(GEOLINKER_WIFI);
+  Serial.println("Network mode set to WiFi");
+  
+  geo.setWiFiCredentials(ssid, password);
+  Serial.println("WiFi credentials configured");
+  
+  Serial.print("Connecting to WiFi network: ");
+  Serial.println(ssid);
+  
+  if (!geo.connectToWiFi()) {
+    Serial.println("ERROR: WiFi connection failed!");
+    Serial.println("Device will continue with offline storage mode");
+  } else {
+    Serial.println("WiFi connected successfully!");
+  }
+
+  Serial.println("\n" + String("=").substring(0,50));
+  Serial.println("GeoLinker GPS Tracker setup complete!");
+  Serial.println("Starting main tracking loop...");
+  Serial.println(String("=").substring(0,50) + "\n");
+}
+
+
+void loop() {
+  
+  
+  uint8_t status = geo.loop();
+  
+  if (status > 0) {
+    Serial.print("[STATUS] GeoLinker Operation: ");
+    
+    switch(status) {
+      case STATUS_SENT:
+        Serial.println("✓ Data transmitted successfully to cloud!");
+        break;
+        
+      case STATUS_GPS_ERROR:
+        Serial.println("✗ GPS module connection error - Check wiring!");
+        break;
+        
+      case STATUS_NETWORK_ERROR:
+        Serial.println("⚠ Network connectivity issue - Data buffered offline");
+        break;
+        
+      case STATUS_BAD_REQUEST_ERROR:
+        Serial.println("✗ Server rejected request - Check API key and data format");
+        break;
+        
+      case STATUS_PARSE_ERROR:
+        Serial.println("✗ GPS data parsing error - Invalid NMEA format");
+        break;
+        
+      case STATUS_INTERNAL_SERVER_ERROR:
+        Serial.println("✗ GeoLinker server internal error - Try again later");
+        break;
+        
+      default:
+        Serial.print("? Unknown status code: ");
+        Serial.println(status);
+        break;
+    }
+  }
+  
+  delay(100);
+}
